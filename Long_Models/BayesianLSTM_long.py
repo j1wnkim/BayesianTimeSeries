@@ -549,7 +549,7 @@ def Train_and_Evaluate2(train_loader, val_loader, device, params1, params2, numE
 
             if Validation_Loss < best_val_loss:
                 best_val_loss = Validation_Loss
-                torch.save(model, "/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianLSTMLong")
+                torch.save(model, "/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianLSTMLong2")
                 early_stop_count = 0;   
             else:
                 early_stop_count +=1
