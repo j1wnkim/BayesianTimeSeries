@@ -433,7 +433,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
 
             if Validation_Loss < best_val_loss:
                 best_val_loss = Validation_Loss
-                torch.save(model, "/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianLSTMLong")
+                torch.save(model, "BayesianLSTMLong2")
                 early_stop_count = 0;   
             else:
                 early_stop_count += 1
@@ -549,7 +549,7 @@ def Train_and_Evaluate2(train_loader, val_loader, device, params1, params2, numE
 
             if Validation_Loss < best_val_loss:
                 best_val_loss = Validation_Loss
-                torch.save(model, "/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianLSTMLong2")
+                torch.save(model, "BayesianLSTMLong2")
                 early_stop_count = 0;   
             else:
                 early_stop_count +=1
@@ -581,7 +581,8 @@ params2 = [0.15, 0.15]
 params3 = [64, 32, 16]
 numEpochs = 3000 
 early_stop_epochs = 100
-#Train_and_Evaluate(TrainingLoader,ValidationLoader, torch.device("cuda"), params1, params2, params3, numEpochs, early_stop_epochs)
+print("TRAINNNNN")
+Train_and_Evaluate(TrainingLoader,ValidationLoader, torch.device("cuda"), params1, params2, params3, numEpochs, early_stop_epochs)
 
 
 # In[16]:
@@ -618,7 +619,7 @@ def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = Date
         else:
             return Validation_Loss_MAE, Validation_Loss_MAPE, df_val, df_val_std 
          
-model = torch.load("/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianBiLSTMLong")
+model = torch.load("BayesianLSTMLong2")
 WeatherData = pd.read_csv('/home/jik19004/FilesToRun/ASOS_10_CT_stations_tmpc_demand_2011_2023.csv').drop(columns = ["Unnamed: 0"])
 DateTimeCol = WeatherData["Datetime"]
 tuples = evaluate2(model, TestingLoader,torch.nn.L1Loss(), MeanAbsolutePercentageError(), device = torch.device("cuda"))
@@ -626,38 +627,27 @@ print(tuples[1])
 
 tuples = LongTermEvaluate(model, TrainingData, TrainingOutput, DateTimeCol = DateTimeCol, index_start = 52603, index_end = 70121)
 ValidationLoss_series = pd.DataFrame({"Training_MAE": tuples[0], "Training_MAPE": tuples[1]})
-ValidationLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TrainingLong/TrainingLossesLong.csv", index = False)
-tuples[2].to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TrainingLong/TrainingPredictionsLong.csv", index = False)
-tuples[3].to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TrainingLong/TrainingStdLong.csv", index = False)
+print(tuples[1])
+#ValidationLoss_series.to_csv("../TrainingLong/TrainingLossesLong.csv", index = False)
+#tuples[2].to_csv("../TrainingLong/TrainingPredictionsLong.csv", index = False)
+#tuples[3].to_csv("../TrainingLong/TrainingStdLong.csv", index = False)
 
 tuples = LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70123, index_end = 78881)
 ValidationLoss_series = pd.DataFrame({"Validation_MAE": tuples[0], "Validation_MAPE": tuples[1]})
-ValidationLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/ValidationLong/ValidationLossesLong.csv", index = False)
-tuples[2].to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/ValidationLong/ValidationPredictionsLong.csv", index = False)
-tuples[3].to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/ValidationLong/ValidationStdLong.csv", index = False)
+print(tuples[1])
+#ValidationLoss_series.to_csv("../ValidationLong/ValidationLossesLong.csv", index = False)
+#tuples[2].to_csv("../ValidationLong/ValidationPredictionsLong.csv", index = False)
+#tuples[3].to_csv("../ValidationLong/ValidationStdLong.csv", index = False)
 
 
 
 tuples = LongTermEvaluate(model, TestingData, TestingOutput, DateTimeCol = DateTimeCol, index_start = 78883, index_end = 91289)
 ValidationLoss_series = pd.DataFrame({"Testing_MAE": tuples[0], "Testing_MAPE": tuples[1]})
-ValidationLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TestingLong/TestingLossesLong.csv", index = False)
-tuples[2].to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TestingLong/TestingPredictionsLong.csv", index = False)
-tuples[3].to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TestingLong/TestingStdLong.csv", index = False)
+print(tuples[1])
+#ValidationLoss_series.to_csv("../TestingLong/TestingLossesLong.csv", index = False)
+#tuples[2].to_csv("../TestingLong/TestingPredictionsLong.csv", index = False)
+#tuples[3].to_csv("../TestingLong/TestingStdLong.csv", index = False)
 
 
 test_losses = evaluate2(model, TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), torch.device("cuda"))
 print(test_losses[1])
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-
-#params1 = [conv_kernel_size, stride, max_kernel_size, LSTM_hidden_size, LSTM_num_layers]
-#params2 = [dropout_LSTM, dropout_FFN]
-#params3 = [hidden_size1, hidden_size2, hidden_size3]
-
