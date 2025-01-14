@@ -399,7 +399,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
         Validation_Loss = 0;
         print("passed ", epoch, "epoch", "Training Loss: ", Training_Loss," ", end = "")
         with torch.no_grad(): 
-            model.train() 
+            model.eval() 
             total_val_samples = 0 
             Validation_Loss = 0 
             for val_input, val_output in val_loader:
@@ -415,7 +415,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
 
             if Validation_Loss < best_val_loss:
                 best_val_loss = Validation_Loss
-                torch.save(model, "/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianLSTM_short")
+                torch.save(model, "BayesianLSTM_short2")
                 early_stop_count = 0;   
             else:
                 early_stop_count += 1
@@ -490,9 +490,9 @@ df_test_std = pd.DataFrame()
 
 DateTimeCol = pd.read_csv("/home/jik19004/FilesToRun/ASOS_10_CT_stations_tmpc_demand_2011_2023.csv")["Datetime"]
 ActualOutput = pd.read_csv("/home/jik19004/FilesToRun/ASOS_10_CT_stations_tmpc_demand_2011_2023.csv")["Demand"] 
-#70338
+#70348
 #91291
-"""
+
 for i in range(70117, 91291, 24):
     train_start = i
     train_end = i + 25 * 6 - 2
@@ -553,9 +553,9 @@ for i in range(70117, 91291, 24):
         
         best_val_loss = Train_and_Evaluate(TrainingLoader, ValidationLoader, device, params1, params2, params3, numEpochs, early_stop_epochs)
         TrainingLoader = DataLoader(TrainingData, batch_size = 6, shuffle = False)
-        test_loss = evaluate2(torch.load("/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianBiLSTM20short"), TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), device) 
-        val_loss = evaluate2(torch.load("/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianBiLSTM20short"), ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device)
-        train_loss = evaluate2(torch.load("/home/jik19004/FilesToRun/BayesianBiDirectional/BayesianBiLSTM20short"), TrainingLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device)
+        test_loss = evaluate2(torch.load("BayesianLSTM_short2"), TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), device) 
+        val_loss = evaluate2(torch.load("BayesianLSTM_short2"), ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device)
+        train_loss = evaluate2(torch.load("BayesianLSTM_short2"), TrainingLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device)
         
         
         print("Best train_loss: {}, Best val_loss: {}, Best test_loss: {}".format(train_loss, val_loss, test_loss))
@@ -584,16 +584,15 @@ TrainingLoss_series = pd.DataFrame({"Train_MAE": Training_Loss_MAE, "Train_MAPE"
 ValidationLoss_series = pd.DataFrame({"Validation_MAE": Validation_Loss_MAE, "Validation_MAPE": Validation_Loss_MAPE})
 TestingLoss_series = pd.DataFrame({"Testing_MAE": Testing_Loss_MAE, "Testing_MAPE": Testing_Loss_MAPE})
 
-TrainingLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TrainingLosses.csv", index = False)
-ValidationLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/ValidationLosses.csv", index = False)
-TestingLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TestingLosses.csv", index = False)
+TrainingLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingLossesShort.csv", index = False)
+ValidationLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationLossesShort.csv", index = False)
+TestingLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingLossesShort.csv", index = False)
 
-df_train.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TrainingPredictions.csv", index = False)
-df_val.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/ValidationPredictions.csv", index = False)
-df_test.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TestingPredictions.csv", index = False)
+df_train.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingPredictionsShort.csv", index = False)
+df_val.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationPredictionsShort.csv", index = False)
+df_test.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingPredictionsShort.csv", index = False)
 
-df_train_std.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TrainingStd.csv", index = False)
-df_val_std.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/ValidationStd.csv", index = False)
-df_test_std.to_csv("/home/jik19004/FilesToRun/BayesianBiDirectional/TestingStd.csv", index = False)
+df_train_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingStdShort.csv", index = False)
+df_val_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationStdShort.csv", index = False)
+df_test_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingStdShort.csv", index = False)
 
-"""

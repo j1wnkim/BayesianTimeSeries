@@ -396,7 +396,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
 
     Optimizer = torch.optim.Adam(params = model.parameters())
     for epoch in range(0,numEpochs):
-        model.train()
+        model.train() 
         Training_Loss = 0;
         total_samples = 0;
         for input, output in train_loader:
@@ -417,7 +417,8 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
         Validation_Loss = 0;
         print("passed ", epoch, "epoch", "Training Loss: ", Training_Loss," ", end = "")
         with torch.no_grad(): 
-            model.train() 
+            #model.train() 
+            model.eval() 
             total_val_samples = 0 
             Validation_Loss = 0 
             for val_input, val_output in val_loader:
@@ -497,66 +498,6 @@ def evaluate2(model, val_loader, criterion, criterion2, device):
 # In[13]:
 
 
-def Train_and_Evaluate2(train_loader, val_loader, device, params1, params2, numEpochs, early_stop_epochs):
-    #num_layers, input_dim, hidden_unit1, hidden_unit2, output_unit, lastNeurons, batch_size, params, device = None
-    model = BayesianModel(params1 = params1, params2 = params2, device = device)
-    model = model.to(device);
-    TrainEpochLoss = [] 
-    ValidationEpochLoss = [] 
-    LossFunction = torch.nn.L1Loss();
-    best_val_loss = float('inf')
-    early_stop_count = 0
-
-
-    Optimizer = torch.optim.Adam(params = model.parameters())
-    for epoch in range(0,numEpochs):
-        model.train()
-        Training_Loss = 0;
-        total_samples = 0;
-        for input, output in train_loader:
-            input = input.to(device);
-            output = torch.squeeze(output, 1);
-            output = output.to(device);
-            predictedVal = model(input)
-            predictedVal = torch.squeeze(predictedVal, 1)
-            Optimizer.zero_grad();
-            batchLoss = LossFunction(predictedVal, output);
-            batchLoss.backward();
-            Optimizer.step();
-            Training_Loss += batchLoss * output.size(0) #* output.size(0);
-            total_samples += output.size(0)
-        Training_Loss = Training_Loss.item()/total_samples
-        TrainEpochLoss.append(Training_Loss)
-
-
-        Validation_Loss = 0;
-        print("passed ", epoch, "epoch", "Training Loss: ", Training_Loss," ", end = "")
-        with torch.no_grad():
-            model.eval()
-            total_val_samples = 0;
-            Validation_Loss = 0;
-            for val_input, val_output in val_loader:
-                val_input = val_input.to(device);
-                val_output = torch.squeeze(val_output,1);
-                val_output = val_output.to(device);
-                predictedVal = model(val_input)
-                predictedVal = torch.squeeze(predictedVal, 1)
-                Validation_Loss += LossFunction(val_output, predictedVal) * val_output.size(0)
-                total_val_samples += val_output.size(0)
-            Validation_Loss = Validation_Loss.item()/total_val_samples
-            print("Validation Loss: ", Validation_Loss)
-            ValidationEpochLoss.append(Validation_Loss)
-
-            if Validation_Loss < best_val_loss:
-                best_val_loss = Validation_Loss
-                torch.save(model, "BayesianLSTMLong2")
-                early_stop_count = 0;   
-            else:
-                early_stop_count +=1
-            if early_stop_count >= early_stop_epochs:
-                return (TrainEpochLoss, ValidationEpochLoss);
-    return (TrainEpochLoss, ValidationEpochLoss);
-
 
 # In[14]:
 
@@ -582,7 +523,7 @@ params3 = [64, 32, 16]
 numEpochs = 3000 
 early_stop_epochs = 100
 print("TRAINNNNN")
-Train_and_Evaluate(TrainingLoader,ValidationLoader, torch.device("cuda"), params1, params2, params3, numEpochs, early_stop_epochs)
+#Train_and_Evaluate(TrainingLoader,ValidationLoader, torch.device("cuda"), params1, params2, params3, numEpochs, early_stop_epochs)
 
 
 # In[16]:
@@ -628,25 +569,25 @@ print(tuples[1])
 tuples = LongTermEvaluate(model, TrainingData, TrainingOutput, DateTimeCol = DateTimeCol, index_start = 52603, index_end = 70121)
 ValidationLoss_series = pd.DataFrame({"Training_MAE": tuples[0], "Training_MAPE": tuples[1]})
 print(tuples[1])
-#ValidationLoss_series.to_csv("../TrainingLong/TrainingLossesLong.csv", index = False)
-#tuples[2].to_csv("../TrainingLong/TrainingPredictionsLong.csv", index = False)
-#tuples[3].to_csv("../TrainingLong/TrainingStdLong.csv", index = False)
+ValidationLoss_series.to_csv("../TrainingLong/TrainingLossesLong.csv", index = False)
+tuples[2].to_csv("../TrainingLong/TrainingPredictionsLong.csv", index = False)
+tuples[3].to_csv("../TrainingLong/TrainingStdLong.csv", index = False)
 
 tuples = LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70123, index_end = 78881)
 ValidationLoss_series = pd.DataFrame({"Validation_MAE": tuples[0], "Validation_MAPE": tuples[1]})
 print(tuples[1])
-#ValidationLoss_series.to_csv("../ValidationLong/ValidationLossesLong.csv", index = False)
-#tuples[2].to_csv("../ValidationLong/ValidationPredictionsLong.csv", index = False)
-#tuples[3].to_csv("../ValidationLong/ValidationStdLong.csv", index = False)
+ValidationLoss_series.to_csv("../ValidationLong/ValidationLossesLong.csv", index = False)
+tuples[2].to_csv("../ValidationLong/ValidationPredictionsLong.csv", index = False)
+tuples[3].to_csv("../ValidationLong/ValidationStdLong.csv", index = False)
 
 
 
 tuples = LongTermEvaluate(model, TestingData, TestingOutput, DateTimeCol = DateTimeCol, index_start = 78883, index_end = 91289)
 ValidationLoss_series = pd.DataFrame({"Testing_MAE": tuples[0], "Testing_MAPE": tuples[1]})
 print(tuples[1])
-#ValidationLoss_series.to_csv("../TestingLong/TestingLossesLong.csv", index = False)
-#tuples[2].to_csv("../TestingLong/TestingPredictionsLong.csv", index = False)
-#tuples[3].to_csv("../TestingLong/TestingStdLong.csv", index = False)
+ValidationLoss_series.to_csv("../TestingLong/TestingLossesLong.csv", index = False)
+tuples[2].to_csv("../TestingLong/TestingPredictionsLong.csv", index = False)
+tuples[3].to_csv("../TestingLong/TestingStdLong.csv", index = False)
 
 
 test_losses = evaluate2(model, TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), torch.device("cuda"))
