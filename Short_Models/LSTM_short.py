@@ -490,9 +490,6 @@ for i in range(70117, 91291, 24):
         df_train = pd.concat([df_train, pd.DataFrame({train_str: train_loss[2]})], ignore_index=False, axis=1)
         df_val = pd.concat([df_val, pd.DataFrame({val_str: val_loss[2]})], ignore_index=False, axis=1)
         df_test = pd.concat([df_test, pd.DataFrame({test_str: test_loss[2]})], ignore_index=False, axis=1)
-        
-        
-
     else:
         break 
 

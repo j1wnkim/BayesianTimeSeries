@@ -329,11 +329,11 @@ def evaluate(model, val_loader, criterion, device):
     return running_loss / len(val_loader.dataset)
 
 
-def evaluate2(model, val_loader, criterion, criterion2, device):
-    num_experiments = 100
+def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments = 100):
     criterion2 = criterion2.to(device)
     with torch.no_grad():
-        model.train()
+        #model.train()
+        model.eval()
         total_val_samples = 0;
         Validation_Loss_MAE = 0;
         Validation_Loss_MAPE = 0;
@@ -437,38 +437,6 @@ def predict(model, data_loader, device):
     return (np.concatenate(predictions), np.concatenate(act_outputs))
 
 
-def predict2(model, data_loader, device):
-    model.train()
-    predictions = []
-    act_outputs = []
-    with torch.no_grad():
-        for data, _ in data_loader:
-            data = data.to(device)
-            output = predict_with_dropout(model, data, device)
-            predictions.append(output.cpu().numpy())
-            act_outputs.append(_.numpy())
-
-    return (np.concatenate(predictions), np.concatenate(act_outputs))
-
-
-def predict_with_dropout(model, input_tensor, device):
-    # Set the model to evaluation mode initially
-    model.eval()
-    # Manually enable dropout layers and ensure batchnorm layers are in eval mode
-    for module in model.modules():
-        if isinstance(module, torch.nn.Dropout):
-            module.train()  # Enable dropout
-        elif isinstance(module, torch.nn.BatchNorm1d) or isinstance(module, torch.nn.BatchNorm2d) or isinstance(module, torch.nn.BatchNorm3d):
-            module.eval()  # Ensure batchnorm is in eval mode
-    
-    # Perform the prediction
-    with torch.no_grad():
-        input_tensor = input_tensor.to(device)
-        output = model(input_tensor)  # Add batch dimension if necessary
-    
-    return output
-
-
 # In[31]:
 
 
@@ -553,9 +521,9 @@ for i in range(70117, 91291, 24):
         
         best_val_loss = Train_and_Evaluate(TrainingLoader, ValidationLoader, device, params1, params2, params3, numEpochs, early_stop_epochs)
         TrainingLoader = DataLoader(TrainingData, batch_size = 6, shuffle = False)
-        test_loss = evaluate2(torch.load("BayesianLSTM_short2"), TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), device) 
-        val_loss = evaluate2(torch.load("BayesianLSTM_short2"), ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device)
-        train_loss = evaluate2(torch.load("BayesianLSTM_short2"), TrainingLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device)
+        test_loss = evaluate2(torch.load("BayesianLSTM_short2"), TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), device, 1) 
+        val_loss = evaluate2(torch.load("BayesianLSTM_short2"), ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, 1)
+        train_loss = evaluate2(torch.load("BayesianLSTM_short2"), TrainingLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, 1)
         
         
         print("Best train_loss: {}, Best val_loss: {}, Best test_loss: {}".format(train_loss, val_loss, test_loss))
@@ -584,15 +552,15 @@ TrainingLoss_series = pd.DataFrame({"Train_MAE": Training_Loss_MAE, "Train_MAPE"
 ValidationLoss_series = pd.DataFrame({"Validation_MAE": Validation_Loss_MAE, "Validation_MAPE": Validation_Loss_MAPE})
 TestingLoss_series = pd.DataFrame({"Testing_MAE": Testing_Loss_MAE, "Testing_MAPE": Testing_Loss_MAPE})
 
-TrainingLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingLossesShort.csv", index = False)
-ValidationLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationLossesShort.csv", index = False)
-TestingLoss_series.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingLossesShort.csv", index = False)
+TrainingLoss_series.to_csv("../Bayesian_1sample/TrainingShort/TrainingLossesShort.csv", index = False)
+ValidationLoss_series.to_csv("../Bayesian_1sample/ValidationShort/ValidationLossesShort.csv", index = False)
+TestingLoss_series.to_csv("../Bayesian_1sample/TestingShort/TestingLossesShort.csv", index = False)
 
-df_train.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingPredictionsShort.csv", index = False)
-df_val.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationPredictionsShort.csv", index = False)
-df_test.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingPredictionsShort.csv", index = False)
+df_train.to_csv("../Bayesian_1sample/TrainingShort/TrainingPredictionsShort.csv", index = False)
+df_val.to_csv("../Bayesian_1sample/ValidationShort/ValidationPredictionsShort.csv", index = False)
+df_test.to_csv("../Bayesian_1sample/TestingShort/TestingPredictionsShort.csv", index = False)
 
-df_train_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingStdShort.csv", index = False)
-df_val_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationStdShort.csv", index = False)
-df_test_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingStdShort.csv", index = False)
+#df_train_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingStdShort.csv", index = False)
+#df_val_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationStdShort.csv", index = False)
+#df_test_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingStdShort.csv", index = False)
 
