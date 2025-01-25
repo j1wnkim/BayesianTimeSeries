@@ -4,6 +4,7 @@
 # In[1]:
 
 
+from pickle import FALSE
 import pandas as pd 
 import numpy as np 
 import torch 
@@ -457,17 +458,19 @@ def evaluate(model, val_loader, criterion, device):
 
 def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments = 100):
     criterion2 = criterion2.to(device)
-    #model.train()
-    model.eval()
+    model.train()
+    #model.eval()
     with torch.no_grad():
         total_val_samples = 0;
         Validation_Loss_MAE = 0;
         Validation_Loss_MAPE = 0;
         predictions = []  
+        predictions_100 = np.array([])
+        
         std_list = [] 
-        for val_input, val_output in val_loader:
-            val_input = val_input.to(device);
-            val_output = val_output.to(device);
+        for val_input, val_output in val_loader: 
+            val_input = val_input.to(device); 
+            val_output = val_output.to(device); 
             #Avgpred
             pred = model(val_input)
             pred = torch.squeeze(pred, 1)
@@ -479,19 +482,33 @@ def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments 
                 predictedVal2 = torch.unsqueeze(predictedVal2, 0)
                 pred = torch.cat([pred, predictedVal2], dim = 0)
             
+            pred_100 = pred.clone().reshape(-1, num_experiments) # reshape the tensor.
             Avgpred = torch.mean(pred, dim = 0)
             stdev = torch.std(pred, dim = 0)
+            
             predCsv = Avgpred.cpu().numpy()
+            pred_100 = pred_100.cpu().numpy() # convert it as numpy
             stdev = stdev.cpu().numpy()
-            predictions.extend(predCsv) 
+
+            
+            predictions.extend(predCsv)
+             
+            
             std_list.extend(stdev)
+            if len(predictions_100) == 0:
+                predictions_100 = pred_100
+            else:
+
+                predictions_100 = np.concatenate([predictions_100, pred_100])
+            
+            
             
             Validation_Loss_MAE += criterion(val_output, Avgpred) * val_output.size(0)
             Validation_Loss_MAPE += criterion2(val_output, Avgpred) * val_output.size(0)
             total_val_samples += val_output.size(0)
         Validation_Loss_MAE = Validation_Loss_MAE/total_val_samples
         Validation_Loss_MAPE = Validation_Loss_MAPE/total_val_samples 
-        return Validation_Loss_MAE, Validation_Loss_MAPE, predictions, std_list   
+        return Validation_Loss_MAE, Validation_Loss_MAPE, predictions, std_list, predictions_100
 
 
 # In[13]:
@@ -535,6 +552,10 @@ def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = Date
     Validation_Loss_MAPE = []
     df_val = pd.DataFrame() 
     df_val_std = pd.DataFrame()
+    df_val_100 = pd.DataFrame() # construct 100 predictions df. 
+    
+    
+    # index_end
     for i in range(index_start, index_end, 24):       
         val_start = i
         val_end = val_start + 40 #val_start + 28
@@ -544,49 +565,53 @@ def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = Date
         if val_end < index_end:            
             ValidationDataset = TimeSeriesDataset(np.array(ValidationData[val_start - index_start: val_start - index_start + 24]), 
                                                np.array(ValidationOutput[val_start - index_start: val_start - index_start + 24]))
-            ValidationLoader = DataLoader(ValidationDataset, batch_size = 3, shuffle = False) 
+            ValidationLoader = DataLoader(ValidationDataset, batch_size = 1, shuffle = False) 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
             val_str = val_output_start + "-" + val_output_end           
-            val_loss = evaluate2(model, ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, num_experiments)       
-            print(val_loss[1].item())     
+            val_loss = evaluate2(model, ValidationLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), device, num_experiments)       
             Validation_Loss_MAE.append(val_loss[0].item())
             Validation_Loss_MAPE.append(val_loss[1].item())
             df_val = pd.concat([df_val, pd.DataFrame({val_str: val_loss[2]})], ignore_index=False, axis=1)
-            df_val_std = pd.concat([df_val_std, pd.DataFrame({val_str: val_loss[3]})], ignore_index = False, axis =1 )
+            df_val_std = pd.concat([df_val_std, pd.DataFrame({val_str: val_loss[3]})], ignore_index = False, axis = 1)
+            df_val_100 = pd.concat([df_val_100, pd.DataFrame({val_str: val_loss[4].tolist()})], ignore_index = False, axis = 1)
         else:
-            return Validation_Loss_MAE, Validation_Loss_MAPE, df_val, df_val_std 
-         
+            return Validation_Loss_MAE, Validation_Loss_MAPE, df_val, df_val_std, df_val_100 
+    return Validation_Loss_MAE, Validation_Loss_MAPE, df_val, df_val_std, df_val_100 
 model = torch.load("BayesianLSTMLong2")
 WeatherData = pd.read_csv('/home/jik19004/FilesToRun/ASOS_10_CT_stations_tmpc_demand_2011_2023.csv').drop(columns = ["Unnamed: 0"])
 DateTimeCol = WeatherData["Datetime"]
-tuples = evaluate2(model, TestingLoader,torch.nn.L1Loss(), MeanAbsolutePercentageError(), device = torch.device("cuda"))
-print(tuples[1])
+#tuples = evaluate2(model, TestingLoader,torch.nn.L1Loss(), MeanAbsolutePercentageError(), device = torch.device("cuda"))
 
-tuples = LongTermEvaluate(model, TrainingData, TrainingOutput, DateTimeCol = DateTimeCol, index_start = 52603, index_end = 70121, num_experiments=1)
+
+tuples = LongTermEvaluate(model, TrainingData, TrainingOutput, DateTimeCol = DateTimeCol, index_start = 52603, index_end = 70121, num_experiments=100)
 ValidationLoss_series = pd.DataFrame({"Training_MAE": tuples[0], "Training_MAPE": tuples[1]})
-print(tuples[1])
-ValidationLoss_series.to_csv("../Bayesian_1sample/TrainingLong/TrainingLossesLong.csv", index = False)
-tuples[2].to_csv("../Bayesian_1sample/TrainingLong/TrainingPredictionsLong.csv", index = False)
+tuples[4].to_csv("../TrainingLong/hundred_preds_long.csv",index = False)
+#tuples[2].to_csv("dummy2.csv", index = FALSE)
+#ValidationLoss_series.to_csv("../Bayesian_1sample/TrainingLong/TrainingLossesLong.csv", index = False)
+#tuples[2].to_csv("../Bayesian_1sample/TrainingLong/TrainingPredictionsLong.csv", index = False)
 #tuples[3].to_csv("../TrainingLong/TrainingStdLong.csv", index = False)
 
-tuples = LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70123, index_end = 78881, num_experiments=1)
+
+tuples = LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70123, index_end = 78881, num_experiments=100)
 ValidationLoss_series = pd.DataFrame({"Validation_MAE": tuples[0], "Validation_MAPE": tuples[1]})
-print(tuples[1])
-ValidationLoss_series.to_csv("../Bayesian_1sample/ValidationLong/ValidationLossesLong.csv", index = False)
-tuples[2].to_csv("../Bayesian_1sample/ValidationLong/ValidationPredictionsLong.csv", index = False)
+tuples[4].to_csv("../ValidationLong/hundred_preds_long.csv", index=False, float_format="%.6f")
+#print(tuples[1])
+#ValidationLoss_series.to_csv("../Bayesian_1sample/ValidationLong/ValidationLossesLong.csv", index = False)
+#tuples[2].to_csv("../Bayesian_1sample/ValidationLong/ValidationPredictionsLong.csv", index = False)
 #tuples[3].to_csv("../ValidationLong/ValidationStdLong.csv", index = False)
 
 
 
-tuples = LongTermEvaluate(model, TestingData, TestingOutput, DateTimeCol = DateTimeCol, index_start = 78883, index_end = 91289, num_experiments=1)
+tuples = LongTermEvaluate(model, TestingData, TestingOutput, DateTimeCol = DateTimeCol, index_start = 78883, index_end = 91289, num_experiments=100)
 ValidationLoss_series = pd.DataFrame({"Testing_MAE": tuples[0], "Testing_MAPE": tuples[1]})
-print(tuples[1])
-ValidationLoss_series.to_csv("../Bayesian_1sample/TestingLong/TestingLossesLong.csv", index = False)
-tuples[2].to_csv("../Bayesian_1sample/TestingLong/TestingPredictionsLong.csv", index = False)
+tuples[4].to_csv("../TestingLong/hundred_preds_long.csv")
+#print(tuples[1])
+#ValidationLoss_series.to_csv("../Bayesian_1sample/TestingLong/TestingLossesLong.csv", index = False)
+#tuples[2].to_csv("../Bayesian_1sample/TestingLong/TestingPredictionsLong.csv", index = False)
 #tuples[3].to_csv("../TestingLong/TestingStdLong.csv", index = False)
 
 
-test_losses = evaluate2(model, TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), torch.device("cuda"))
-print(test_losses[1])
+#test_losses = evaluate2(model, TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), torch.device("cuda"))
+#print(test_losses[1])
