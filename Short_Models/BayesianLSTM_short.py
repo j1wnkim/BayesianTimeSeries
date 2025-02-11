@@ -331,14 +331,16 @@ def evaluate(model, val_loader, criterion, device):
 
 def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments = 100):
     criterion2 = criterion2.to(device)
+    model.train() 
     with torch.no_grad():
         #model.train()
-        model.eval()
         total_val_samples = 0;
         Validation_Loss_MAE = 0;
         Validation_Loss_MAPE = 0;
         predictions = []  
         std_list = [] 
+        predictions_100 = np.array([])
+        
         for val_input, val_output in val_loader:
             val_input = val_input.to(device);
             val_output = val_output.to(device);
@@ -352,20 +354,30 @@ def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments 
                 predictedVal2 = torch.squeeze(predictedVal2, 1)
                 predictedVal2 = torch.unsqueeze(predictedVal2, 0)
                 pred = torch.cat([pred, predictedVal2], dim = 0)
-                
+            
+            pred_100 = pred.clone().reshape(-1, num_experiments)    
             Avgpred = torch.mean(pred, dim = 0)
             stdev = torch.std(pred, dim = 0)
+            
             predCsv = Avgpred.cpu().numpy()
+            pred_100 = pred_100.cpu().numpy() # convert it as numpy 
             stdev = stdev.cpu().numpy()
+            
             predictions.extend(predCsv) 
             std_list.extend(stdev)
+            
+            if len(predictions_100) == 0:
+                predictions_100 = pred_100 
+            else:
+                predictions_100 = np.concatenate([predictions_100,pred_100])
+            
             
             Validation_Loss_MAE += criterion(val_output, Avgpred) * val_output.size(0)
             Validation_Loss_MAPE += criterion2(val_output, Avgpred) * val_output.size(0)
             total_val_samples += val_output.size(0)
         Validation_Loss_MAE = Validation_Loss_MAE/total_val_samples
         Validation_Loss_MAPE = Validation_Loss_MAPE/total_val_samples 
-        return Validation_Loss_MAE, Validation_Loss_MAPE, predictions, std_list   
+        return Validation_Loss_MAE, Validation_Loss_MAPE, predictions, std_list, predictions_100    
 
 def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, params3, numEpochs, early_stop_epochs):
     model = BayesianModel(input_size = 12, params1 = params1, params2 = params2, params3 = params3, num_layers = 3, output_size = 1)
@@ -456,6 +468,10 @@ df_train_std = pd.DataFrame()
 df_val_std = pd.DataFrame()
 df_test_std = pd.DataFrame()
 
+df_train_100 = pd.DataFrame() 
+df_val_100 = pd.DataFrame() 
+df_test_100 = pd.DataFrame() 
+
 DateTimeCol = pd.read_csv("/home/jik19004/FilesToRun/ASOS_10_CT_stations_tmpc_demand_2011_2023.csv")["Datetime"]
 ActualOutput = pd.read_csv("/home/jik19004/FilesToRun/ASOS_10_CT_stations_tmpc_demand_2011_2023.csv")["Demand"] 
 #70348
@@ -521,9 +537,10 @@ for i in range(70117, 91291, 24):
         
         best_val_loss = Train_and_Evaluate(TrainingLoader, ValidationLoader, device, params1, params2, params3, numEpochs, early_stop_epochs)
         TrainingLoader = DataLoader(TrainingData, batch_size = 6, shuffle = False)
-        test_loss = evaluate2(torch.load("BayesianLSTM_short2"), TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), device, 1) 
-        val_loss = evaluate2(torch.load("BayesianLSTM_short2"), ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, 1)
-        train_loss = evaluate2(torch.load("BayesianLSTM_short2"), TrainingLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, 1)
+        
+        test_loss = evaluate2(torch.load("BayesianLSTM_short2"), TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), device, 100) 
+        val_loss = evaluate2(torch.load("BayesianLSTM_short2"), ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, 100)
+        train_loss = evaluate2(torch.load("BayesianLSTM_short2"), TrainingLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, 100)
         
         
         print("Best train_loss: {}, Best val_loss: {}, Best test_loss: {}".format(train_loss, val_loss, test_loss))
@@ -544,6 +561,9 @@ for i in range(70117, 91291, 24):
         df_val_std = pd.concat([df_val_std, pd.DataFrame({val_str: val_loss[3]})], ignore_index = False, axis =1 )
         df_test_std = pd.concat([df_test_std, pd.DataFrame({test_str: test_loss[3]})], ignore_index = False, axis = 1)
         
+        df_train_100 = pd.concat([df_train_100, pd.DataFrame({train_str: train_loss[4].tolist()})], ignore_index = False, axis = 1)
+        df_val_100 = pd.concat([df_val_100, pd.DataFrame({val_str: val_loss[4].tolist()})], ignore_index = False, axis =1)
+        df_test_100 = pd.concat([df_test_100, pd.DataFrame({test_str: test_loss[4].tolist()})], ignore_index = False, axis =1)
 
     else:
         break 
@@ -552,13 +572,17 @@ TrainingLoss_series = pd.DataFrame({"Train_MAE": Training_Loss_MAE, "Train_MAPE"
 ValidationLoss_series = pd.DataFrame({"Validation_MAE": Validation_Loss_MAE, "Validation_MAPE": Validation_Loss_MAPE})
 TestingLoss_series = pd.DataFrame({"Testing_MAE": Testing_Loss_MAE, "Testing_MAPE": Testing_Loss_MAPE})
 
-TrainingLoss_series.to_csv("../Bayesian_1sample/TrainingShort/TrainingLossesShort.csv", index = False)
-ValidationLoss_series.to_csv("../Bayesian_1sample/ValidationShort/ValidationLossesShort.csv", index = False)
-TestingLoss_series.to_csv("../Bayesian_1sample/TestingShort/TestingLossesShort.csv", index = False)
 
-df_train.to_csv("../Bayesian_1sample/TrainingShort/TrainingPredictionsShort.csv", index = False)
-df_val.to_csv("../Bayesian_1sample/ValidationShort/ValidationPredictionsShort.csv", index = False)
-df_test.to_csv("../Bayesian_1sample/TestingShort/TestingPredictionsShort.csv", index = False)
+df_train_100.to_csv("../TrainingShort/hundred_preds_short.csv", index = False)
+df_val_100.to_csv("../ValidationShort/hundred_preds_short.csv", index = False)
+df_test_100.to_csv("../TestingShort/hundred_preds_short.csv", index = False)
+#TrainingLoss_series.to_csv("../Bayesian_1sample/TrainingShort/TrainingLossesShort.csv", index = False)
+#ValidationLoss_series.to_csv("../Bayesian_1sample/ValidationShort/ValidationLossesShort.csv", index = False)
+#TestingLoss_series.to_csv("../Bayesian_1sample/TestingShort/TestingLossesShort.csv", index = False)
+
+#df_train.to_csv("../Bayesian_1sample/TrainingShort/TrainingPredictionsShort.csv", index = False)
+#df_val.to_csv("../Bayesian_1sample/ValidationShort/ValidationPredictionsShort.csv", index = False)
+#df_test.to_csv("../Bayesian_1sample/TestingShort/TestingPredictionsShort.csv", index = False)
 
 #df_train_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingStdShort.csv", index = False)
 #df_val_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationStdShort.csv", index = False)

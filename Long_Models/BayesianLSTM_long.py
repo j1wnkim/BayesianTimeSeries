@@ -492,8 +492,6 @@ def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments 
 
             
             predictions.extend(predCsv)
-             
-            
             std_list.extend(stdev)
             if len(predictions_100) == 0:
                 predictions_100 = pred_100
