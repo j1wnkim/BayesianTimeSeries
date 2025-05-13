@@ -242,6 +242,8 @@ class LSTMModel(torch.nn.Module):
         self.input_size = input_size - params1[0] - params1[2] + 2
         self.BiLSTM = nn.LSTM(input_size = self.input_size, hidden_size = params1[3], bidirectional = False, num_layers = params1[4])
         
+    
+        
         layers = []
         input_size = params1[3] #params1[3] *2 
         num_units = 0 

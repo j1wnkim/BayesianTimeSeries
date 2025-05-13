@@ -331,9 +331,9 @@ def evaluate(model, val_loader, criterion, device):
 
 def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments = 100):
     criterion2 = criterion2.to(device)
-    model.train() 
+    #model.eval() 
     with torch.no_grad():
-        #model.train()
+        model.train()
         total_val_samples = 0;
         Validation_Loss_MAE = 0;
         Validation_Loss_MAPE = 0;
@@ -382,7 +382,7 @@ def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments 
 def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, params3, numEpochs, early_stop_epochs):
     model = BayesianModel(input_size = 12, params1 = params1, params2 = params2, params3 = params3, num_layers = 3, output_size = 1)
     model = model.to(device);
-    LossFunction = torch.nn.L1Loss();
+    LossFunction = torch.nn.MSELoss();
     best_val_loss = float('inf')
     Training_Loss = float('inf')
     early_stop_count = 0
@@ -427,7 +427,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
 
             if Validation_Loss < best_val_loss:
                 best_val_loss = Validation_Loss
-                torch.save(model, "BayesianLSTM_short2")
+                torch.save(model, "Bayesian_LSTM_short")
                 early_stop_count = 0;   
             else:
                 early_stop_count += 1
@@ -436,7 +436,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
     return (Training_Loss, best_val_loss)
 
 def predict(model, data_loader, device):
-    #model.eval()
+    model.eval()
     predictions = []
     act_outputs = []
     with torch.no_grad():
@@ -518,7 +518,7 @@ for i in range(70117, 91291, 24):
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         params1 = [3, 1, 3, 64, 1]
-        params2 = [0.15, 0.15]
+        params2 = [0.05, 0.05]
         params3 = [64, 32, 16]
         
         #params1 = [conv_kernel_size, stride, max_kernel_size, LSTM_hidden_size, LSTM_num_layers]
@@ -538,9 +538,9 @@ for i in range(70117, 91291, 24):
         best_val_loss = Train_and_Evaluate(TrainingLoader, ValidationLoader, device, params1, params2, params3, numEpochs, early_stop_epochs)
         TrainingLoader = DataLoader(TrainingData, batch_size = 6, shuffle = False)
         
-        test_loss = evaluate2(torch.load("BayesianLSTM_short2"), TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), device, 100) 
-        val_loss = evaluate2(torch.load("BayesianLSTM_short2"), ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, 100)
-        train_loss = evaluate2(torch.load("BayesianLSTM_short2"), TrainingLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device, 100)
+        test_loss = evaluate2(torch.load("Bayesian_LSTM_short"), TestingLoader, torch.nn.MSELoss(), MeanAbsolutePercentageError(), device, 100) 
+        val_loss = evaluate2(torch.load("Bayesian_LSTM_short"), ValidationLoader, torch.nn.MSELoss(), MeanAbsolutePercentageError(), device, 100)
+        train_loss = evaluate2(torch.load("Bayesian_LSTM_short"), TrainingLoader, torch.nn.MSELoss(), MeanAbsolutePercentageError(), device, 100)
         
         
         print("Best train_loss: {}, Best val_loss: {}, Best test_loss: {}".format(train_loss, val_loss, test_loss))
@@ -568,23 +568,30 @@ for i in range(70117, 91291, 24):
     else:
         break 
 
+
 TrainingLoss_series = pd.DataFrame({"Train_MAE": Training_Loss_MAE, "Train_MAPE": Training_Loss_MAPE})
 ValidationLoss_series = pd.DataFrame({"Validation_MAE": Validation_Loss_MAE, "Validation_MAPE": Validation_Loss_MAPE})
 TestingLoss_series = pd.DataFrame({"Testing_MAE": Testing_Loss_MAE, "Testing_MAPE": Testing_Loss_MAPE})
 
 
-df_train_100.to_csv("../TrainingShort/hundred_preds_short.csv", index = False)
-df_val_100.to_csv("../ValidationShort/hundred_preds_short.csv", index = False)
-df_test_100.to_csv("../TestingShort/hundred_preds_short.csv", index = False)
-#TrainingLoss_series.to_csv("../Bayesian_1sample/TrainingShort/TrainingLossesShort.csv", index = False)
-#ValidationLoss_series.to_csv("../Bayesian_1sample/ValidationShort/ValidationLossesShort.csv", index = False)
-#TestingLoss_series.to_csv("../Bayesian_1sample/TestingShort/TestingLossesShort.csv", index = False)
 
-#df_train.to_csv("../Bayesian_1sample/TrainingShort/TrainingPredictionsShort.csv", index = False)
-#df_val.to_csv("../Bayesian_1sample/ValidationShort/ValidationPredictionsShort.csv", index = False)
-#df_test.to_csv("../Bayesian_1sample/TestingShort/TestingPredictionsShort.csv", index = False)
+df_train_100.to_csv("../TrainingShort/hundred_preds_short_Gaussian.csv", index = False)
+df_val_100.to_csv("../ValidationShort/hundred_preds_short_Gaussian.csv", index = False)
+df_test_100.to_csv("../TestingShort/hundred_preds_short_Gaussian.csv", index = False)
 
-#df_train_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingStdShort.csv", index = False)
-#df_val_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationStdShort.csv", index = False)
-#df_test_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingStdShort.csv", index = False)
+
+TrainingLoss_series.to_csv("../TrainingLossesShort_Gaussian.csv", index = False)
+ValidationLoss_series.to_csv("../ValidationShort/ValidationLossesShort_Gaussian.csv", index = False)
+TestingLoss_series.to_csv("../TestingShort/TestingLossesShort_Gaussian.csv", index = False)
+
+
+df_train.to_csv("../TrainingShort/TrainingPredictionsShort_Gaussian.csv", index = False)
+df_val.to_csv("../ValidationShort/ValidationPredictionsShort_Gaussian.csv", index = False)
+df_test.to_csv("../TestingShort/TestingPredictionsShort_Gaussian.csv", index = False)
+
+
+
+df_train_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TrainingShort/TrainingStdShort_Gaussian.csv", index = False)
+df_val_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/ValidationShort/ValidationStdShort_Gaussian.csv", index = False)
+df_test_std.to_csv("/home/jik19004/FilesToRun/BayesianTimeSeries/TestingShort/TestingStdShort_Gaussian.csv", index = False)
 

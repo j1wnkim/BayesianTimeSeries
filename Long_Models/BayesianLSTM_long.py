@@ -436,7 +436,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
 
             if Validation_Loss < best_val_loss:
                 best_val_loss = Validation_Loss
-                torch.save(model, "BayesianLSTMLong_Gaussian")
+                torch.save(model, "LSTMLong_Gaussian")
                 early_stop_count = 0;   
             else:
                 early_stop_count += 1
@@ -533,7 +533,7 @@ TestingLoader = DataLoader(TestingDataset, batch_size = 256, shuffle = False);
 
 
 params1 = [3, 1, 3, 64, 1]
-params2 = [0.05, 0.05]
+params2 = [0.01, 0.01]
 params3 = [64, 32, 16]
 numEpochs = 3000 
 early_stop_epochs = 100
@@ -546,7 +546,7 @@ Train_and_Evaluate(TrainingLoader, ValidationLoader, torch.device("cuda"), param
 
 from torchmetrics.regression import MeanAbsolutePercentageError
 
-def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70117, index_end = 91291, num_experiments = 100):
+def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70117, index_end = 91291, num_experiments = 1):
     Validation_Loss_MAE = []
     Validation_Loss_MAPE = []
     df_val = pd.DataFrame() 
@@ -580,7 +580,7 @@ def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = Date
     return Validation_Loss_MAE, Validation_Loss_MAPE, df_val, df_val_std, df_val_100 
 
 
-model = torch.load("BayesianLSTMLong_Gaussian")
+model = torch.load("LSTMLong_Gaussian")
 WeatherData = pd.read_csv('/home/jik19004/FilesToRun/ASOS_10_CT_stations_tmpc_demand_2011_2023.csv').drop(columns = ["Unnamed: 0"])
 DateTimeCol = WeatherData["Datetime"]
 #tuples = evaluate2(model, TestingLoader,torch.nn.L1Loss(), MeanAbsolutePercentageError(), device = torch.device("cuda"))
@@ -589,13 +589,13 @@ DateTimeCol = WeatherData["Datetime"]
 tuples = LongTermEvaluate(model, TrainingData, TrainingOutput, DateTimeCol = DateTimeCol, index_start = 52603, index_end = 70121, num_experiments = 100) 
 ValidationLoss_series = pd.DataFrame({"Training_MSE": tuples[0], "Training_MAPE": tuples[1]})
 tuples[4].to_csv("../TrainingLong/hundred_preds_long_Gaussian.csv",index = False)
-tuples[2].to_csv("dummy2.csv", index = FALSE) 
+#tuples[2].to_csv("dummy2.csv", index = FALSE) 
 ValidationLoss_series.to_csv("../TrainingLong/TrainingLossesLong_Gaussian.csv", index = False) 
 tuples[2].to_csv("../TrainingLong/TrainingPredictionsLong_Gaussian.csv", index = False)
 tuples[3].to_csv("../TrainingLong/TrainingStdLong_Gaussian.csv", index = False)
-
-
-
+ 
+ 
+ 
 tuples = LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70123, index_end = 78881, num_experiments = 100) 
 ValidationLoss_series = pd.DataFrame({"Validation_MSE": tuples[0], "Validation_MAPE": tuples[1]})
 tuples[4].to_csv("../ValidationLong/hundred_preds_long_Gaussian.csv", index=False, float_format="%.6f")
@@ -607,7 +607,7 @@ tuples[3].to_csv("../ValidationLong/ValidationStdLong_Gaussian.csv", index = Fal
 
 tuples = LongTermEvaluate(model, TestingData, TestingOutput, DateTimeCol = DateTimeCol, index_start = 78883, index_end = 91289, num_experiments=100)  
 ValidationLoss_series = pd.DataFrame({"Testing_MSE": tuples[0], "Testing_MAPE": tuples[1]}) 
-tuples[4].to_csv("../TestingLong/hundred_preds_long_Gaussian.csv") 
+tuples[4].to_csv("../TestingLong/hundred_preds_long_Gaussian.csv")  #hundred_preds_long
 print(tuples[1])
 ValidationLoss_series.to_csv("../TestingLong/TestingLossesLong_Gaussian.csv", index = False) 
 tuples[2].to_csv("../TestingLong/TestingPredictionsLong_Gaussian.csv", index = False) 
