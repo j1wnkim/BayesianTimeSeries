@@ -4,6 +4,7 @@
 # In[1]:
 
 
+from pickle import FALSE
 import pandas as pd 
 import numpy as np 
 import torch 
@@ -225,24 +226,96 @@ from typing import *
 import torch.nn as nn 
 
 
+class VariationalDropout(nn.Module):
+    """
+    Applies the same dropout mask across the temporal dimension
+    See https://arxiv.org/abs/1512.05287 for more details.
+    Note that this is not applied to the recurrent activations in the LSTM like the above paper.
+    Instead, it is applied to the inputs and outputs of the recurrent layer.
+    """
+    def __init__(self, dropout: float, batch_first: Optional[bool]=False):
+        super().__init__()
+        self.dropout = dropout
+        self.batch_first = batch_first
 
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.training or self.dropout <= 0.:
+            return x
+
+        is_packed = isinstance(x, PackedSequence)
+        if is_packed:
+            x, batch_sizes = x
+            max_batch_size = int(batch_sizes[0])
+        else:
+            batch_sizes = None
+            max_batch_size = x.size(0)
+
+        # Drop same mask across entire sequence
+        if self.batch_first:
+            m = x.new_empty(max_batch_size, 1, x.size(2), requires_grad=False).bernoulli_(1 - self.dropout)
+        else:
+            m = x.new_empty(1, max_batch_size, x.size(2), requires_grad=False).bernoulli_(1 - self.dropout)
+        x = x.masked_fill(m == 0, 0) / (1 - self.dropout)
+
+        if is_packed:
+            return PackedSequence(x, batch_sizes)
+        else:
+            return x
+
+class LSTM(nn.LSTM):
+    def __init__(self, *args, dropouti: float=0.,
+                 dropoutw: float=0., dropouto: float=0.,
+                 batch_first=True, unit_forget_bias=True, **kwargs):
+        super().__init__(*args, **kwargs, batch_first=batch_first)
+        self.unit_forget_bias = unit_forget_bias
+        self.dropoutw = dropoutw
+        self.input_drop = VariationalDropout(dropouti,
+                                             batch_first=batch_first)
+        self.output_drop = VariationalDropout(dropouto,
+                                              batch_first=batch_first)
+        self._init_weights()
+
+    def _init_weights(self):
+        """
+        Use orthogonal init for recurrent layers, xavier uniform for input layers
+        Bias is 0 except for forget gate
+        """
+        for name, param in self.named_parameters():
+            if "weight_hh" in name:
+                nn.init.orthogonal_(param.data)
+            elif "weight_ih" in name:
+                nn.init.xavier_uniform_(param.data)
+            elif "bias" in name and self.unit_forget_bias:
+                nn.init.zeros_(param.data)
+                param.data[self.hidden_size:2 * self.hidden_size] = 1
+
+    def _drop_weights(self):
+        for name, param in self.named_parameters():
+            if "weight_hh" in name:
+                getattr(self, name).data = \
+                    torch.nn.functional.dropout(param.data, p=self.dropoutw,
+                                                training=self.training).contiguous()
+
+    def forward(self, input, hx=None):
+        self._drop_weights()
+        input = self.input_drop(input)
+        seq, state = super().forward(input, hx=hx)
+        return self.output_drop(seq), state
 
 # In[11]:
 
 
-class LSTMModel(torch.nn.Module):
+class BayesianModel(torch.nn.Module):
     def __init__(self, input_size, params1, params2, params3, num_layers, output_size):    
     #params1 = [conv_kernel_size, stride, max_kernel_size, LSTM_hidden_size, LSTM_num_layers]
     #params2 = [dropout_LSTM, dropout_FFN]
     #params3 = [hidden_size1, hidden_size2, hidden_size3]
-        super(LSTMModel, self).__init__()        
+        super(BayesianModel, self).__init__()        
         self.conv1D = torch.nn.Conv1d(in_channels = 18, out_channels = 18, kernel_size = params1[0], stride = params1[1])
         self.max1D = torch.nn.MaxPool1d(kernel_size = params1[2], stride = params1[1])
-        self.dropout1 = torch.nn.Dropout(params2[0])
+        self.dropout1 = torch.nn.Dropout(params2[1])
         self.input_size = input_size - params1[0] - params1[2] + 2
-        self.BiLSTM = nn.LSTM(input_size = self.input_size, hidden_size = params1[3], bidirectional = False, num_layers = params1[4])
-        
-    
+        self.BiLSTM = LSTM(input_size = self.input_size, hidden_size = params1[3], dropout = params2[0], bidirectional = False, num_layers = params1[4])
         
         layers = []
         input_size = params1[3] #params1[3] *2 
@@ -251,7 +324,7 @@ class LSTMModel(torch.nn.Module):
             num_units = params3[i] 
             layers.append(torch.nn.Linear(input_size, num_units, bias = True))
             layers.append(torch.nn.ReLU())
-            layers.append(torch.nn.Dropout(params2[0])) #also add in the dropout. 
+            layers.append(torch.nn.Dropout(params2[1])) #also add in the dropout. 
             input_size = num_units
         
         self.intermediate_layers = torch.nn.Sequential(*layers)
@@ -314,9 +387,10 @@ def evaluate(model, val_loader, criterion, device):
     return running_loss / len(val_loader.dataset)
 
 def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, params3, numEpochs, early_stop_epochs):
-    model = LSTMModel(input_size = 12, params1 = params1, params2 = params2, params3 = params3, num_layers = 3, output_size = 1)
+    model = BayesianModel(input_size = 12, params1 = params1, params2 = params2, params3 = params3, num_layers = 3, output_size = 1)
     model = model.to(device);
-    LossFunction = torch.nn.L1Loss();
+    #LossFunction = torch.nn.L1Loss()
+    LossFunction = torch.nn.MSELoss()
     best_val_loss = float('inf')
     Training_Loss = float('inf')
     early_stop_count = 0
@@ -324,7 +398,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
 
     Optimizer = torch.optim.Adam(params = model.parameters())
     for epoch in range(0,numEpochs):
-        model.train()
+        model.train() 
         Training_Loss = 0;
         total_samples = 0;
         for input, output in train_loader:
@@ -345,6 +419,7 @@ def Train_and_Evaluate(train_loader, val_loader, device, params1, params2, param
         Validation_Loss = 0;
         print("passed ", epoch, "epoch", "Training Loss: ", Training_Loss," ", end = "")
         with torch.no_grad(): 
+            #model.train() 
             model.eval() 
             total_val_samples = 0 
             Validation_Loss = 0 
@@ -382,19 +457,21 @@ def evaluate(model, val_loader, criterion, device):
     return running_loss / len(val_loader.dataset)
 
 
-def evaluate2(model, val_loader, criterion, criterion2, device):
-    num_experiments = 1
+def evaluate2(model, val_loader, criterion, criterion2, device, num_experiments = 1):
     criterion2 = criterion2.to(device)
+    #model.train()
     model.eval()
     with torch.no_grad():
         total_val_samples = 0;
         Validation_Loss_MAE = 0;
         Validation_Loss_MAPE = 0;
         predictions = []  
+        predictions_100 = np.array([])
+        
         std_list = [] 
-        for val_input, val_output in val_loader:
-            val_input = val_input.to(device);
-            val_output = val_output.to(device);
+        for val_input, val_output in val_loader: 
+            val_input = val_input.to(device); 
+            val_output = val_output.to(device); 
             #Avgpred
             pred = model(val_input)
             pred = torch.squeeze(pred, 1)
@@ -406,82 +483,35 @@ def evaluate2(model, val_loader, criterion, criterion2, device):
                 predictedVal2 = torch.unsqueeze(predictedVal2, 0)
                 pred = torch.cat([pred, predictedVal2], dim = 0)
             
+            pred_100 = pred.clone().reshape(-1, num_experiments) # reshape the tensor.
             Avgpred = torch.mean(pred, dim = 0)
             stdev = torch.std(pred, dim = 0)
+            
             predCsv = Avgpred.cpu().numpy()
+            pred_100 = pred_100.cpu().numpy() # convert it as numpy
             stdev = stdev.cpu().numpy()
-            predictions.extend(predCsv) 
+
+            
+            predictions.extend(predCsv)
+            std_list.extend(stdev)
+            if len(predictions_100) == 0:
+                predictions_100 = pred_100
+            else:
+
+                predictions_100 = np.concatenate([predictions_100, pred_100])
+            
+            
             
             Validation_Loss_MAE += criterion(val_output, Avgpred) * val_output.size(0)
             Validation_Loss_MAPE += criterion2(val_output, Avgpred) * val_output.size(0)
             total_val_samples += val_output.size(0)
         Validation_Loss_MAE = Validation_Loss_MAE/total_val_samples
         Validation_Loss_MAPE = Validation_Loss_MAPE/total_val_samples 
-        return Validation_Loss_MAE, Validation_Loss_MAPE, predictions   
+        return Validation_Loss_MAE, Validation_Loss_MAPE, predictions, std_list, predictions_100
 
 
 # In[13]:
 
-
-def Train_and_Evaluate2(train_loader, val_loader, device, params1, params2, numEpochs, early_stop_epochs):
-    #num_layers, input_dim, hidden_unit1, hidden_unit2, output_unit, lastNeurons, batch_size, params, device = None
-    model = LSTMModel(params1 = params1, params2 = params2, device = device)
-    model = model.to(device);
-    TrainEpochLoss = [] 
-    ValidationEpochLoss = [] 
-    LossFunction = torch.nn.L1Loss();
-    best_val_loss = float('inf')
-    early_stop_count = 0
-
-
-    Optimizer = torch.optim.Adam(params = model.parameters())
-    for epoch in range(0,numEpochs):
-        model.train()
-        Training_Loss = 0;
-        total_samples = 0;
-        for input, output in train_loader:
-            input = input.to(device);
-            output = torch.squeeze(output, 1);
-            output = output.to(device);
-            predictedVal = model(input)
-            predictedVal = torch.squeeze(predictedVal, 1)
-            Optimizer.zero_grad();
-            batchLoss = LossFunction(predictedVal, output);
-            batchLoss.backward();
-            Optimizer.step();
-            Training_Loss += batchLoss * output.size(0) #* output.size(0);
-            total_samples += output.size(0)
-        Training_Loss = Training_Loss.item()/total_samples
-        TrainEpochLoss.append(Training_Loss)
-
-
-        Validation_Loss = 0;
-        print("passed ", epoch, "epoch", "Training Loss: ", Training_Loss," ", end = "")
-        with torch.no_grad():
-            model.eval()
-            total_val_samples = 0;
-            Validation_Loss = 0;
-            for val_input, val_output in val_loader:
-                val_input = val_input.to(device);
-                val_output = torch.squeeze(val_output,1);
-                val_output = val_output.to(device);
-                predictedVal = model(val_input)
-                predictedVal = torch.squeeze(predictedVal, 1)
-                Validation_Loss += LossFunction(val_output, predictedVal) * val_output.size(0)
-                total_val_samples += val_output.size(0)
-            Validation_Loss = Validation_Loss.item()/total_val_samples
-            print("Validation Loss: ", Validation_Loss)
-            ValidationEpochLoss.append(Validation_Loss)
-
-            if Validation_Loss < best_val_loss:
-                best_val_loss = Validation_Loss
-                torch.save(model, "LSTMLong")
-                early_stop_count = 0;   
-            else:
-                early_stop_count +=1
-            if early_stop_count >= early_stop_epochs:
-                return (TrainEpochLoss, ValidationEpochLoss);
-    return (TrainEpochLoss, ValidationEpochLoss);
 
 
 # In[14]:
@@ -503,11 +533,12 @@ TestingLoader = DataLoader(TestingDataset, batch_size = 256, shuffle = False);
 
 
 params1 = [3, 1, 3, 64, 1]
-params2 = [0.15]
+params2 = [0.01, 0.01]
 params3 = [64, 32, 16]
 numEpochs = 3000 
 early_stop_epochs = 100
-Train_and_Evaluate(TrainingLoader,ValidationLoader, torch.device("cuda"), params1, params2, params3, numEpochs, early_stop_epochs)
+print("TRAINNNNN")
+Train_and_Evaluate(TrainingLoader, ValidationLoader, torch.device("cuda"), params1, params2, params3, numEpochs, early_stop_epochs)
 
 
 # In[16]:
@@ -515,11 +546,15 @@ Train_and_Evaluate(TrainingLoader,ValidationLoader, torch.device("cuda"), params
 
 from torchmetrics.regression import MeanAbsolutePercentageError
 
-def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70117, index_end = 91291):
+def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70117, index_end = 91291, num_experiments = 1):
     Validation_Loss_MAE = []
     Validation_Loss_MAPE = []
     df_val = pd.DataFrame() 
+    df_val_std = pd.DataFrame()
+    df_val_100 = pd.DataFrame() # construct 100 predictions df. 
     
+    
+    # index_end
     for i in range(index_start, index_end, 24):       
         val_start = i
         val_end = val_start + 40 #val_start + 28
@@ -529,57 +564,44 @@ def LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = Date
         if val_end < index_end:            
             ValidationDataset = TimeSeriesDataset(np.array(ValidationData[val_start - index_start: val_start - index_start + 24]), 
                                                np.array(ValidationOutput[val_start - index_start: val_start - index_start + 24]))
-            ValidationLoader = DataLoader(ValidationDataset, batch_size = 3, shuffle = False) 
+            ValidationLoader = DataLoader(ValidationDataset, batch_size = 1, shuffle = False) 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
             val_str = val_output_start + "-" + val_output_end           
-            val_loss = evaluate2(model, ValidationLoader, torch.nn.L1Loss(),MeanAbsolutePercentageError(), device)       
-            print(val_loss[1].item())     
+            val_loss = evaluate2(model, ValidationLoader, torch.nn.MSELoss(), MeanAbsolutePercentageError(), device, num_experiments)       
             Validation_Loss_MAE.append(val_loss[0].item())
             Validation_Loss_MAPE.append(val_loss[1].item())
             df_val = pd.concat([df_val, pd.DataFrame({val_str: val_loss[2]})], ignore_index=False, axis=1)
+            df_val_std = pd.concat([df_val_std, pd.DataFrame({val_str: val_loss[3]})], ignore_index = False, axis = 1)
+            df_val_100 = pd.concat([df_val_100, pd.DataFrame({val_str: val_loss[4].tolist()})], ignore_index = False, axis = 1)
         else:
-            return Validation_Loss_MAE, Validation_Loss_MAPE, df_val
-         
+            return Validation_Loss_MAE, Validation_Loss_MAPE, df_val, df_val_std, df_val_100 
+    return Validation_Loss_MAE, Validation_Loss_MAPE, df_val, df_val_std, df_val_100 
+
+
 model = torch.load("LSTMLong")
 WeatherData = pd.read_csv('/home/jik19004/FilesToRun/ASOS_10_CT_stations_tmpc_demand_2011_2023.csv').drop(columns = ["Unnamed: 0"])
 DateTimeCol = WeatherData["Datetime"]
-tuples = evaluate2(model, TestingLoader,torch.nn.L1Loss(), MeanAbsolutePercentageError(), device = torch.device("cuda"))
+
+# 70121, 7881, 91289
+tuples = LongTermEvaluate(model, TrainingData, TrainingOutput, DateTimeCol = DateTimeCol, index_start = 52603, index_end = 70121, num_experiments = 1) 
+ValidationLoss_series = pd.DataFrame({"Training_MSE": tuples[0], "Training_MAPE": tuples[1]})
+tuples[2].to_csv("../Baselines/TrainingLong/TrainingPredictionsLong_Gaussian.csv", index = False)
+ 
+ 
+ 
+tuples = LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70123, index_end = 78881, num_experiments = 1) 
+ValidationLoss_series = pd.DataFrame({"Validation_MSE": tuples[0], "Validation_MAPE": tuples[1]})
+tuples[2].to_csv("../Baselines/ValidationLong/ValidationPredictionsLong_Gaussian.csv", index = False)
+
+
+
+tuples = LongTermEvaluate(model, TestingData, TestingOutput, DateTimeCol = DateTimeCol, index_start = 78883, index_end = 91289, num_experiments=1)  
+ValidationLoss_series = pd.DataFrame({"Testing_MSE": tuples[0], "Testing_MAPE": tuples[1]}) 
 print(tuples[1])
+tuples[2].to_csv("../Baselines/TestingLong/TestingPredictionsLong_Gaussian.csv", index = False) 
 
 
-tuples = LongTermEvaluate(model, TrainingData, TrainingOutput, DateTimeCol = DateTimeCol, index_start = 52603, index_end = 70121)
-ValidationLoss_series = pd.DataFrame({"Training_MAE": tuples[0], "Training_MAPE": tuples[1]})
-ValidationLoss_series.to_csv("../TrainingLong/NormalTrainingLossesLong.csv", index = False)
-tuples[2].to_csv("../TrainingLong/NormalTrainingPredictionsLong.csv", index = False)
-
-tuples = LongTermEvaluate(model, ValidationData, ValidationOutput, DateTimeCol = DateTimeCol, index_start = 70123, index_end = 78881)
-ValidationLoss_series = pd.DataFrame({"Validation_MAE": tuples[0], "Validation_MAPE": tuples[1]})
-ValidationLoss_series.to_csv("../ValidationLong/NormalValidationLossesLong.csv", index = False)
-tuples[2].to_csv("../ValidationLong/NormalValidationPredictionsLong.csv", index = False)
-
-
-
-tuples = LongTermEvaluate(model, TestingData, TestingOutput, DateTimeCol = DateTimeCol, index_start = 78883, index_end = 91289)
-ValidationLoss_series = pd.DataFrame({"Testing_MAE": tuples[0], "Testing_MAPE": tuples[1]})
-ValidationLoss_series.to_csv("../TestingLong/NormalTestingLossesLong.csv", index = False)
-tuples[2].to_csv("../TestingLong/NormalTestingPredictionsLong.csv", index = False)
-
-
-test_losses = evaluate2(model, TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), torch.device("cuda"))
-print(test_losses[1])
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-
-#params1 = [conv_kernel_size, stride, max_kernel_size, LSTM_hidden_size, LSTM_num_layers]
-#params2 = [dropout_LSTM, dropout_FFN]
-#params3 = [hidden_size1, hidden_size2, hidden_size3]
-
+#test_losses = evaluate2(model, TestingLoader, torch.nn.L1Loss(), MeanAbsolutePercentageError(), torch.device("cuda"))
+#print(test_losses[1])
